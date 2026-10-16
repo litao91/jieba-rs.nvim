@@ -199,7 +199,14 @@ fn vim_single_quoted(s: &str) -> String {
 
 /// Build the `-c` arguments that set up the buffer, optionally install the
 /// plugin, feed the keys, and dump the resulting state to `out`.
-fn driver_args(case: &Case, plugin: bool, out: &Path) -> Vec<String> {
+///
+/// `setup_lua` is `None` for the vanilla run and the plugin's `setup{...}` call
+/// for the other, so both halves differ only in configuration.
+fn driver_args(
+    case: &Case,
+    setup_lua: Option<&str>,
+    out: &Path,
+) -> Vec<String> {
     let mut args: Vec<String> = Vec::new();
 
     // `enew` leaves one empty line, and `setline(1, [...])` overwrites it, so
@@ -213,12 +220,8 @@ fn driver_args(case: &Case, plugin: bool, out: &Path) -> Vec<String> {
     args.push(format!("call setline(1, [{lines}])"));
     args.push(format!("call cursor({}, {})", case.lnum, case.col));
 
-    if plugin {
-        // `mappings = true` installs the default keymaps globally, so the same
-        // literal keystrokes drive the plugin here and vim's builtins below.
-        args.push(
-            "lua require('jieba_rs').setup{ mappings = true }".to_string(),
-        );
+    if let Some(setup_lua) = setup_lua {
+        args.push(setup_lua.to_string());
     }
 
     // A double-quoted vimscript literal so `<...>` key notation becomes real
@@ -287,7 +290,7 @@ fn compares_marks(keys: &str) -> bool {
 }
 
 /// Run one case in a fresh headless nvim and return the dumped state.
-fn run_case(case: &Case, plugin: bool, out: &Path) -> Option<Dump> {
+fn run_case(case: &Case, setup_lua: Option<&str>, out: &Path) -> Option<Dump> {
     let root = repo_root();
     let mut cmd = Command::new("nvim");
     cmd.arg("--headless")
@@ -299,7 +302,7 @@ fn run_case(case: &Case, plugin: bool, out: &Path) -> Option<Dump> {
         .arg("set noswapfile nomodeline noundofile")
         .arg("-c")
         .arg("enew");
-    for a in driver_args(case, plugin, out) {
+    for a in driver_args(case, setup_lua, out) {
         cmd.arg("-c").arg(a);
     }
     cmd.arg("-c").arg("qa!");
@@ -344,8 +347,10 @@ fn diff_fields(plugin: &Dump, native: &Dump, keys: &str) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn ascii_matches_native_vim() {
+/// Run every case against a vanilla nvim and diff. `setup_lua` is the plugin's
+/// `setup{...}` call under test; `tag` namespaces the temp files so two
+/// configurations can run in the same `cargo test` invocation.
+fn assert_matches_native(setup_lua: &str, tag: &str) {
     if Command::new("nvim").arg("--version").output().is_err() {
         eprintln!("skipping: nvim not found on PATH");
         return;
@@ -360,10 +365,10 @@ fn ascii_matches_native_vim() {
     let mut diffs: Vec<String> = Vec::new();
     let cases = cases();
     for (i, case) in cases.iter().enumerate() {
-        let plug_out = tmp.join(format!("jieba_it_plug_{i}.out"));
-        let nat_out = tmp.join(format!("jieba_it_nat_{i}.out"));
-        let plugin = run_case(case, true, &plug_out);
-        let native = run_case(case, false, &nat_out);
+        let plug_out = tmp.join(format!("jieba_it_{tag}_plug_{i}.out"));
+        let nat_out = tmp.join(format!("jieba_it_{tag}_nat_{i}.out"));
+        let plugin = run_case(case, Some(setup_lua), &plug_out);
+        let native = run_case(case, None, &nat_out);
         match (plugin, native) {
             (Some(p), Some(n)) => {
                 let d = diff_fields(&p, &n, case.keys);
@@ -382,10 +387,31 @@ fn ascii_matches_native_vim() {
 
     assert!(
         diffs.is_empty(),
-        "{} of {} cases diverge from native vim on ASCII:\n\n{}",
+        "{} of {} cases diverge from native vim on ASCII with `{setup_lua}`:\n\n{}",
         diffs.len(),
         cases.len(),
         diffs.join("\n\n")
     );
-    eprintln!("all {} cases match native vim", cases.len());
+    eprintln!("all {} cases match native vim ({tag})", cases.len());
+}
+
+/// `mappings = true` installs the default keymaps globally, so the same literal
+/// keystrokes drive the plugin here and vim's builtins in the vanilla run.
+#[test]
+fn ascii_matches_native_vim() {
+    assert_matches_native(
+        "lua require('jieba_rs').setup{ mappings = true }",
+        "default",
+    );
+}
+
+/// `experimental_opfunc` routes `g@` through a Visual selection instead of
+/// operator playback. It is gated on `v:operator == "g@"`, so every other
+/// operator has to stay byte-identical - that is what this guards.
+#[test]
+fn ascii_matches_native_vim_with_experimental_opfunc() {
+    assert_matches_native(
+        "lua require('jieba_rs').setup{ mappings = true, experimental_opfunc = true }",
+        "opfunc",
+    );
 }
