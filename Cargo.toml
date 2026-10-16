@@ -1,0 +1,30 @@
+[package]
+name = "jieba-rs-nvim"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Chinese word motions and text objects for Neovim, powered by jieba-rs. All plugin logic in Rust; the only Lua shipped is a build helper."
+repository = "https://github.com/litao91/jieba-rs.nvim"
+
+[lib]
+# Neovim's Lua C loader looks for `lua/jieba_rs.so` exporting `luaopen_jieba_rs`;
+# the symbol name comes from `#[nvim_oxi::plugin] fn jieba_rs` in src/lib.rs and
+# the file name from the Makefile's install step (cargo emits lib<name>.so).
+# Deliberately not `jieba_rs`: that would collide with the `jieba-rs`
+# dependency's own extern crate name.
+name = "jieba_rs_nvim"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nvim-oxi = { version = "0.6", features = ["neovim-0-11"] }
+jieba-rs = "0.10.2"
+jieba_vim_rs_core = { path = "jieba_vim_rs_core", version = "0.7.1" }
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+
+[workspace]
+members = ["jieba_vim_rs_core", "jieba_vim_rs_test"]
+resolver = "3"

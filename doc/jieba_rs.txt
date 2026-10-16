@@ -1,0 +1,248 @@
+*jieba_rs.txt*   Chinese word motions and text objects for Neovim
+
+                License:  Apache license v2 + Vim license
+              Repository:  https://github.com/litao91/jieba-rs.nvim
+
+                                                    *jieba-rs.nvim* *jieba_rs*
+
+==============================================================================
+CONTENTS                                                  *jieba_rs-contents*
+
+  1. Introduction ......................... |jieba_rs-intro|
+  2. Requirements ......................... |jieba_rs-requirements|
+  3. Installation ......................... |jieba_rs-install|
+  4. Configuration ........................ |jieba_rs-config|
+  5. Mappings ............................. |jieba_rs-mappings|
+     5.1 Word motions ..................... |jieba_rs-word-motions|
+     5.2 Word text objects ................ |jieba_rs-text-objects|
+     5.3 Insert-mode keys ................. |jieba_rs-ins-special|
+     5.4 Motion preview ................... |jieba_rs-preview|
+  6. Commands ............................. |jieba_rs-commands|
+  7. Lua API .............................. |jieba_rs-api|
+  8. Optional dependency .................. |jieba_rs-opt-dependency|
+  9. Credits .............................. |jieba_rs-credits|
+
+==============================================================================
+1. INTRODUCTION                                           *jieba_rs-intro*
+
+jieba-rs.nvim provides Chinese-aware |word-motions| and word-based
+|text-objects| for Neovim, segmented by jieba-rs. On pure ASCII text the
+mappings are byte-for-byte equivalent to the native ones; on Chinese text they
+stop at word boundaries rather than treating every hanzi as a separate word.
+
+The plugin is a single Rust `cdylib`. There is no vimscript, and the only Lua
+is `lua/jieba_rs/build.lua`, which runs the build. All configuration and
+runtime state lives in Rust; the plugin sets no `g:`, `b:` or `w:` variables.
+
+It is a Neovim-only rewrite of jieba.vim, whose Vim 8/9 support required a
+vimscript integration layer plus a Python 3 backend.
+
+==============================================================================
+2. REQUIREMENTS                                    *jieba_rs-requirements*
+
+  - Neovim nightly (0.13-dev) or newer. `src/nvimrs.rs` hand-rolls the C-API
+    calls nvim-oxi 0.6 gets wrong, and its `KeyDict_*` layouts are pinned to
+    0.13-dev's generated headers; on older Neovim they differ.
+  - a Rust toolchain on `PATH`, to build the native module
+  - `make` (on Windows `cargo` alone suffices; the build helper falls back)
+  - optional: |vim-repeat|, for |.| repeat
+
+==============================================================================
+3. INSTALLATION                                         *jieba_rs-install*
+
+The compiled module `lua/jieba_rs.so` is not committed, so build it once. >lua
+
+    vim.pack.add { "git@github.com:litao91/jieba-rs.nvim.git" }
+    require("jieba_rs.build").build():pwait()
+    require("jieba_rs").setup {}
+<
+Or from a shell: >
+
+    make install
+<
+A running Neovim keeps the module it already loaded, so restart afterwards.
+
+The plugin does nothing until |jieba_rs.setup()| is called.
+
+==============================================================================
+4. CONFIGURATION                                         *jieba_rs-config*
+
+                                                       *jieba_rs.setup()*
+require("jieba_rs").setup({opts})
+
+  Every key is optional. Re-running `setup()` reconfigures; it does not stack
+  duplicate mappings or autocmds.
+
+  lazy                (boolean, default `true`)
+        Defer parsing the jieba dictionary until a line actually contains
+        Chinese. With `false` it is parsed during `setup()`.
+
+  user_dict           (string, default `nil`)
+        Path to a jieba user dictionary. It *replaces* the built-in dictionary.
+        Always loaded eagerly, so an invalid path is reported once by
+        `setup()` instead of from inside a keymap callback. Example dictionary:
+        https://github.com/fxsjy/jieba/blob/master/test/userdict.txt
+
+  mappings            (boolean, default `true`)
+        Master switch for the default keymaps. The `<Plug>` maps are always
+        defined either way.
+
+  filetypes           (table, default `{}`)
+        When empty, the default keymaps are installed globally. When non-empty,
+        they are installed buffer-locally from a |FileType| autocmd matching
+        exactly these patterns, so other filetypes keep the native motions: >lua
+
+            require("jieba_rs").setup {
+              filetypes = { "markdown", "typst", "rst" },
+            }
+<
+  preview_limits      (integer, default `0`)
+        Bound for |jieba_rs-preview|. Positive `N` previews `N` steps; `0`
+        previews the rest of the current line; negative means unbounded.
+
+  experimental_opfunc (boolean, default `false`)
+        Implement operator-pending `g@` through a Visual selection so that any
+        'operatorfunc' works, at the cost of possibly clobbering |`<| and |`>|.
+        See |jieba_rs-opfunc| and
+        `docs/design_choices/0003-omap-impl-tradeoff.md`.
+
+==============================================================================
+5. MAPPINGS                                             *jieba_rs-mappings*
+
+5.1 WORD MOTIONS                                   *jieba_rs-word-motions*
+
+Each of these behaves like the native motion it mirrors, including [count] and
+the |word| / |exclusive| semantics - the `W` forms skip Chinese punctuation,
+the `w` forms do not.
+
+  <Plug> map                  native ~
+  <Plug>(Jieba_w)             |w|                      *<Plug>(Jieba_w)*
+  <Plug>(Jieba_W)             |W|                      *<Plug>(Jieba_W)*
+  <Plug>(Jieba_b)             |b|                      *<Plug>(Jieba_b)*
+  <Plug>(Jieba_B)             |B|                      *<Plug>(Jieba_B)*
+  <Plug>(Jieba_e)             |e|                      *<Plug>(Jieba_e)*
+  <Plug>(Jieba_E)             |E|                      *<Plug>(Jieba_E)*
+  <Plug>(Jieba_ge)            |ge|                     *<Plug>(Jieba_ge)*
+  <Plug>(Jieba_gE)            |gE|                     *<Plug>(Jieba_gE)*
+  <Plug>(Jieba_C_Left)        |<C-Left>|               *<Plug>(Jieba_C_Left)*
+  <Plug>(Jieba_S_Left)        |<S-Left>|               *<Plug>(Jieba_S_Left)*
+  <Plug>(Jieba_C_Right)       |<C-Right>|              *<Plug>(Jieba_C_Right)*
+  <Plug>(Jieba_S_Right)       |<S-Right>|              *<Plug>(Jieba_S_Right)*
+
+Available in Normal, Visual and Operator-pending mode (the arrow keys also in
+Insert mode). Example: >lua
+
+    vim.keymap.set({ "n", "x", "o" }, "w", "<Plug>(Jieba_w)")
+<
+5.2 WORD TEXT OBJECTS                                *jieba_rs-text-objects*
+
+  <Plug> map                  native ~
+  <Plug>(Jieba_iw)            |iw|                     *<Plug>(Jieba_iw)*
+  <Plug>(Jieba_iW)            |iW|                     *<Plug>(Jieba_iW)*
+  <Plug>(Jieba_aw)            |aw|                     *<Plug>(Jieba_aw)*
+  <Plug>(Jieba_aW)            |aW|                     *<Plug>(Jieba_aW)*
+
+Visual and Operator-pending mode only; text objects have no Normal-mode form.
+
+5.3 INSERT-MODE KES                                     *jieba_rs-ins-special*
+
+  <Plug> map                  native ~
+  <Plug>(Jieba_C_w)           |i_CTRL-W|               *<Plug>(Jieba_C_w)*
+  <Plug>(Jieba_C_Left)        |i_<C-Left>|
+  <Plug>(Jieba_S_Left)        |i_<S-Left>|
+  <Plug>(Jieba_C_Right)       |i_<C-Right>|
+  <Plug>(Jieba_S_Right)       |i_<S-Right>|
+
+5.4 MOTION PREVIEW                                        *jieba_rs-preview*
+
+Highlight where the next few motions would land, before moving:
+
+  <Plug> map                        previews ~
+  <Plug>(Jieba_preview_w)           |<Plug>(Jieba_w)|
+  <Plug>(Jieba_preview_W)           |<Plug>(Jieba_W)|
+  <Plug>(Jieba_preview_e)           |<Plug>(Jieba_e)|
+  <Plug>(Jieba_preview_E)           |<Plug>(Jieba_E)|
+  <Plug>(Jieba_preview_b)           |<Plug>(Jieba_b)|
+  <Plug>(Jieba_preview_B)           |<Plug>(Jieba_B)|
+  <Plug>(Jieba_preview_ge)          |<Plug>(Jieba_ge)|
+  <Plug>(Jieba_preview_gE)          |<Plug>(Jieba_gE)|
+  <Plug>(Jieba_preview_cancel)      clears the preview
+
+>lua
+    vim.keymap.set("n", "<Leader>jw", "<Plug>(Jieba_preview_w)")
+    vim.keymap.set("n", "<Leader>jc", "<Plug>(Jieba_preview_cancel)")
+<
+The highlights use the `JiebaPreview` group, linked to |hl-IncSearch|, and are
+drawn with |extmarks|, so every position in the preview is marked. The number
+of steps is bounded by `preview_limits`. Text objects and the arrow keys cannot
+be previewed.
+
+==============================================================================
+6. COMMANDS                                             *jieba_rs-commands*
+
+                                                          *:JiebaPreviewCancel*
+:JiebaPreviewCancel     Clear the motion preview. Same as
+                        |<Plug>(Jieba_preview_cancel)|.
+
+                                                          *:JiebaOmapPlayback*
+                                                          *:JiebaOmapVisual*
+                                                          *:JiebaOmapAbort*
+                                                          *:JiebaImapExec*
+:JiebaOmapPlayback      Internal plumbing. nvim holds `expr_map_lock` while an
+:JiebaOmapVisual        |<expr>| mapping's callback runs, so the callback may
+:JiebaOmapAbort         not touch the buffer or the undo history. Each callback
+:JiebaImapExec          therefore computes and stashes its result and returns
+                        `<Esc><Cmd>...<CR>`; the `<Esc>` cancels the pending
+                        operator and the `<Cmd>` does the work in Normal mode.
+                        There is nothing to configure here.
+
+==============================================================================
+7. LUA API                                                   *jieba_rs-api*
+
+`require("jieba_rs")` is the native module itself (`lua/jieba_rs.so`).
+
+  version                       string, the crate version
+  setup(opts)                   see |jieba_rs.setup()|
+  default_keymaps(buf)          install the default keymaps; `buf` 0 = global
+  update_isk(isk)               re-read an 'iskeyword' value into the tokenizer
+  preview_cancel()              see |:JiebaPreviewCancel|
+
+The raw model calls below take and return Vim-style positions (`lnum`/`col`
+1-based) and exist mainly for tests and benchmarks; the keymaps use them
+internally.
+
+  nmap(motion, curpos, count)         -> `{ cursor, prevent_change }`
+  xmap(vmode, motion, begin, end, n)  -> `{ langle, rangle, visualmode, ... }`
+  omap(motion, curpos, count, op)     -> `{ cursor, langle, rangle, ... }`
+  imap(motion, curpos)                -> `{ cursor }`
+  preview_nmap(motion, curpos, limit) -> list of `{ lnum, col }`
+
+`require("jieba_rs.build")` provides `build()`, `library_available()` and
+`get_repo_root()`; see |jieba_rs-install|.
+
+==============================================================================
+8. OPTIONAL DEPENDENCY                           *jieba_rs-opt-dependency*
+
+With `tpope/vim-repeat` installed, |.| repeats the last operation: `dw.`
+behaves like `dwdw`. Without it the calls into `repeat#set()` fail silently and
+everything else is unaffected.
+
+                                                      *jieba_rs-opfunc*
+Operator-pending motions normally replay the operator over the computed range.
+That cannot serve an 'operatorfunc' which calls |getchar()|, because the
+typeahead it would read has been drained. `experimental_opfunc = true` makes
+`g@` select the range visually instead, which supports any 'operatorfunc' but
+may leave |`<| and |`>| pointing at that range.
+
+==============================================================================
+9. CREDITS                                               *jieba_rs-credits*
+
+  - kkew3/jieba.vim (Apache-2.0): the motion engine, the test double, and the
+    semantics of every mapping ported here.
+  - litao91/nvim-matchup-rs (MIT): `src/nvimrs.rs` derives from its Neovim
+    C-API FFI layer.
+  - messense/jieba-rs (MIT): segmentation.
+  - noib3/nvim-oxi: the Neovim binding.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      # Scoped to this crate: jieba_vim_rs_core is vendored from jieba.vim
+      # unmodified, and "fixing" its lints would only diverge from upstream.
+      - name: cargo clippy
+        run: cargo clippy -p jieba-rs-nvim --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The differential harness drives a real Neovim, and src/nvimrs.rs is
+      # pinned to the 0.13-dev C ABI, so this has to be nightly.
+      - name: Install Neovim nightly
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: nightly
+
+      - name: Engine unit tests
+        run: cargo test --release --workspace --lib --bins
+
+      - name: Build the native module
+        if: runner.os != 'Windows'
+        run: make install
+
+      - name: Build the native module (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --release
+          New-Item -ItemType Directory -Force lua | Out-Null
+          Copy-Item target/release/jieba_rs_nvim.dll lua/jieba_rs.dll
+
+      - name: Module loads
+        shell: bash
+        env:
+          # Passed through the environment rather than interpolated into the
+          # script body, so no expression ever reaches a shell command line.
+          PLUGIN_DIR: ${{ github.workspace }}
+        run: >
+          nvim --headless -u NONE
+          --cmd "set rtp+=$PLUGIN_DIR"
+          -c "lua assert(require('jieba_rs').version)"
+          -c "qa!"
+
+      # Needs nvim on PATH; each case is a fresh headless process, so this is
+      # where a regression in the ported mapping layer shows up.
+      - name: Differential integration test
+        run: cargo test --release --test integration -- --nocapture
