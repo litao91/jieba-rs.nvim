@@ -30,16 +30,6 @@ pub fn normal(cmd: &str) {
     let _ = api::command(&format!("normal! {cmd}"));
 }
 
-/// `execute 'normal! {cmd}'` for a command that may contain bytes which are not
-/// valid UTF-8 - a blockwise `visualmode()` is the single byte `\x16`, which
-/// cannot be carried by `api::command`.
-pub fn normal_raw(cmd: &[u8]) {
-    let mut full = Vec::with_capacity(cmd.len() + 8);
-    full.extend_from_slice(b"normal! ");
-    full.extend_from_slice(cmd);
-    nvimrs::command_raw(&full);
-}
-
 /// `noautocmd execute 'normal! {cmd}'`.
 pub fn normal_noautocmd(cmd: &str) {
     let _ = api::command(&format!("noautocmd normal! {cmd}"));

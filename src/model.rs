@@ -121,22 +121,6 @@ pub fn nmap(
     .flatten()
 }
 
-/// One `nmap` step from an explicit position, for the motion preview.
-pub fn nmap_step(
-    state: &SharedState,
-    motion: &[u8],
-    lnum: usize,
-    col: usize,
-) -> Option<(usize, usize)> {
-    let buffer = current_buffer();
-    let out = with_wm(state, |wm| {
-        wm.nmap(&buffer, motion, [0, lnum, col, 0, col], 1).ok()
-    })
-    .flatten()?;
-    let [_, lnum, col, ..] = out.cursor;
-    Some((lnum, col))
-}
-
 /// `jieba_vim#model#xmap`.
 pub fn xmap(
     state: &SharedState,

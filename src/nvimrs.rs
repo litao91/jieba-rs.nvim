@@ -526,11 +526,6 @@ pub fn call_fn_as<V: FromObject>(name: &str, args: &Array) -> Option<V> {
     V::from_object(obj).ok()
 }
 
-/// `call_function(name, [])`
-pub fn call_fn0_as<V: FromObject>(name: &str) -> Option<V> {
-    call_fn_as(name, &Array::new())
-}
-
 /// Native `nvim_echo` with a single plain-text chunk (history=true).
 pub fn echo(text: &str) {
     let chunks =
@@ -938,18 +933,6 @@ where
     let func: Function<(), String> =
         Function::from_fn(move |()| -> nvim_oxi::Result<String> { Ok(f()) });
     set_keymap_inner(buf, mode, lhs, "", desc, Some(func.lua_ref()), true, true)
-}
-
-/// Define a keymap with a literal string rhs (`noremap` + `silent`), the
-/// equivalent of `nnoremap <silent> lhs rhs`.
-pub fn set_keymap_str(
-    buf: i32,
-    mode: &str,
-    lhs: &str,
-    rhs: &str,
-    desc: &str,
-) -> bool {
-    set_keymap_inner(buf, mode, lhs, rhs, desc, None, false, true)
 }
 
 /// Define a **remappable** keymap with a literal string rhs, the equivalent of
