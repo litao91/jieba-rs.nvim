@@ -39,6 +39,15 @@ function M.library_available()
   return vim.uv.fs_stat(installed_path(M.get_repo_root())) ~= nil
 end
 
+--- Modification time in nanoseconds, or nil when the file does not exist.
+local function mtime(path)
+  local st = vim.uv.fs_stat(path)
+  if not st then
+    return nil
+  end
+  return st.mtime.sec * 1000000000 + (st.mtime.nsec or 0)
+end
+
 local function notify(msg, level)
   -- Runs inside a vim.async task (fast-event context), where vim.notify is not
   -- allowed; vim.schedule'd work still runs while Task:pwait() blocks.
@@ -50,19 +59,25 @@ end
 --- Build with `make install`, falling back to a bare `cargo build` plus a copy
 --- where make is unavailable (Windows).
 ---
+--- Cargo's own freshness check decides whether anything is rebuilt, so this is
+--- cheap to call on every start and stays silent when nothing changed: the
+--- "restart Neovim" notification only appears if the installed module actually
+--- moved.
+---
 --- Returns an already-started |vim.async.Task|; block on it with `:pwait()`.
---- Cargo's own freshness check decides whether anything is rebuilt, so calling
---- this repeatedly is cheap and never churns an installed .so unnecessarily.
 ---@return vim.async.Task
 function M.build()
   assert(vim.async and vim.async.run, 'require("jieba_rs.build").build() needs Neovim 0.12+')
   local root = M.get_repo_root()
-  local cmd = vim.fn.executable("make") == 1
-      and { "make", "install" }
-    or { "cargo", "build", "--release" }
+  local installed = installed_path(root)
+  local cmd = vim.fn.executable("make") == 1 and { "make", "install" } or { "cargo", "build", "--release" }
+  local had_lib = M.library_available()
+  local before = mtime(installed)
+  if not had_lib then
+    notify "building the native module (this can take a few minutes)..."
+  end
 
   return vim.async.run(function()
-    notify("building the native module (this can take a few minutes)...")
     ---@diagnostic disable-next-line: redundant-parameter
     local res = vim.async.await(3, vim.system, cmd, { cwd = root, text = true })
     if res.code ~= 0 then
@@ -70,9 +85,18 @@ function M.build()
       error("jieba_rs: build failed", 0)
     end
     if cmd[1] ~= "make" then
-      vim.uv.fs_copyfile(built_path(root), installed_path(root))
+      -- The make path already skips a needless copy; mirror that here so the
+      -- mtime comparison below still means "cargo relinked".
+      local built = built_path(root)
+      if not (vim.uv.fs_stat(installed) and mtime(built) <= mtime(installed)) then
+        vim.uv.fs_copyfile(built, installed)
+      end
     end
-    notify("native module built; restart Neovim to load it")
+    if not had_lib then
+      notify "native module built; restart Neovim to load it"
+    elseif mtime(installed) ~= before then
+      notify "native module rebuilt; restart Neovim to load it"
+    end
     return true
   end)
 end

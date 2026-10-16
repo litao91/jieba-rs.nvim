@@ -25,10 +25,16 @@ build:
 ## Install via a temp file + rename so a .so this nvim already dlopen'd is never
 ## clobbered in place (rename swaps the dirent and leaves the running inode
 ## mapped until restart).
+##
+## Only copy when cargo actually relinked: an up-to-date build leaves $(LIB)
+## older than the $(SO) installed from it, so `make install` is then a true
+## no-op and build.lua can tell "nothing changed" from "rebuilt".
 install: build
 	@mkdir -p lua
-	cp $(LIB) $(SO).tmp
-	mv $(SO).tmp $(SO)
+	@if [ ! -f $(SO) ] || [ $(LIB) -nt $(SO) ]; then \
+		cp $(LIB) $(SO).tmp; \
+		mv $(SO).tmp $(SO); \
+	fi
 
 ## Engine unit tests (tokenizer, motions, golden master, imap arrows).
 test:
