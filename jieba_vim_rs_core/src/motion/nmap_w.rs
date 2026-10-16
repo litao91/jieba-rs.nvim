@@ -1,0 +1,59 @@
+// Copyright 2024-2026 Kaiwen Wu. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy
+// of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations
+// under the License.
+
+use crate::BufferLike;
+use crate::token::JiebaPlaceholder;
+
+use super::api::{NmapOutput, WordMotion};
+use super::core::buffer::ParsedBuffer;
+use super::core::motion::Motion;
+use super::core::position::Position;
+use super::policy::adjust_cursor::AdjustCursor;
+use super::primitives::text_object::ForwardWord;
+
+impl<C: JiebaPlaceholder> WordMotion<C> {
+    /// Vim motion `w` (if `word` is `true`) or `W` (if `word` is `false`)
+    /// in normal mode. Take in current `cursor` (0, lnum, col, off, _), and
+    /// return the new cursor position. We denote both `word` and `WORD` with
+    /// the English word "word" below.
+    ///
+    /// # Basics
+    ///
+    /// `w`/`W` jumps to the first character of next word. Empty line is
+    /// considered as a word.
+    ///
+    /// # Edge cases
+    ///
+    /// - If current cursor is on the last character of the last token in the
+    ///   buffer, no further jump should be made. And the motion should be
+    ///   taken as a failure.
+    /// - If there is no next word to the right of current cursor, jump to the
+    ///   last character of the last token in the buffer.
+    pub fn nmap_w<B: BufferLike + ?Sized>(
+        &self,
+        buffer: &B,
+        mut cursor: Position,
+        count: u64,
+        word: bool,
+    ) -> Result<NmapOutput, B::Error> {
+        let mut buffer = ParsedBuffer::new(buffer, &self.tokenizer, word);
+        let mut motion = ForwardWord::new(false);
+        let s = motion.map(&mut buffer, count, &mut cursor)?;
+        cursor.adjust_cursor(&mut buffer)?;
+        Ok(NmapOutput {
+            cursor,
+            prevent_change: s.into_prevent_change(),
+        })
+    }
+}
