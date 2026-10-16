@@ -137,18 +137,27 @@ all work.
 
 ### Preview
 
-`<Plug>(Jieba_preview_w)` highlights where the next few `w`s would land, so you
-can see the word boundaries before moving:
+`jieba_preview_w()` highlights where the next few `w`s would land, so you can see
+the word boundaries before moving. One function per motion, plus a cancel:
 
 ```lua
-vim.keymap.set("n", "<Leader>jw", "<Plug>(Jieba_preview_w)")
-vim.keymap.set("n", "<Leader>jc", "<Plug>(Jieba_preview_cancel)")
+local jieba = require("jieba_rs")
+vim.keymap.set("n", "<Leader>cw", jieba.jieba_preview_w, { desc = "Preview jieba w" })
+vim.keymap.set("n", "<Leader>ce", jieba.jieba_preview_e, { desc = "Preview jieba e" })
+vim.keymap.set("n", "<Leader>cc", jieba.jieba_preview_cancel, { desc = "Cancel jieba preview" })
 ```
 
-`:JiebaPreviewCancel` does the same as the cancel map. The highlights use the
-`JiebaPreview` group (linked to `IncSearch`) and are drawn with extmarks, so
-*every* position is marked - upstream's `:match` loop only ever showed the last
-one, since `:match` is one-slot-per-window.
+Available: `jieba_preview_w` `_W` `_e` `_E` `_b` `_B` `_ge` `_gE` and
+`jieba_preview_cancel`. Prefer these over the equivalent
+`<Plug>(Jieba_preview_*)` maps: a `<Plug>` used as a mapping rhs only resolves
+when the mapping is **not** `noremap`, which is an easy footgun, whereas a Lua
+function needs no such care. The `<Plug>` maps remain for configs that want them,
+and `:JiebaPreviewCancel` does the same as `jieba_preview_cancel()`.
+
+The highlights use the `JiebaPreview` group (linked to `IncSearch`) and are drawn
+with extmarks, so *every* position is marked - upstream's `:match` loop only ever
+showed the last one, since `:match` is one-slot-per-window. Text objects and the
+arrow keys cannot be previewed.
 
 ## Commands
 

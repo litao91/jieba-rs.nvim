@@ -18,7 +18,8 @@
 //!   setup(opts)                 - build the engine, register maps/commands/autocmds
 //!   nmap/xmap/omap/imap(...)    - raw model calls (tests, benchmarks, interop)
 //!   preview_nmap(...)           - the positions the preview would highlight
-//!   preview_cancel()            - clear the preview highlights
+//!   jieba_preview_{motion}()    - highlight where that motion would land
+//!   jieba_preview_cancel()      - clear the preview highlights
 //!   update_isk(isk)             - re-read 'iskeyword' into the tokenizer
 //!
 //! All plugin logic lives in Rust. The only Lua in this repository is
@@ -324,13 +325,6 @@ fn jieba_rs() -> Result<Dictionary> {
         });
 
     let st = Rc::clone(&state);
-    let preview_cancel: Function<(), ()> =
-        Function::from_fn(move |()| -> Result<()> {
-            guard("preview_cancel", || preview::cancel(&st));
-            Ok(())
-        });
-
-    let st = Rc::clone(&state);
     let default_keymaps: Function<(Option<i64>,), ()> =
         Function::from_fn(move |(buf,): (Option<i64>,)| -> Result<()> {
             guard("default_keymaps", || {
@@ -339,7 +333,7 @@ fn jieba_rs() -> Result<Dictionary> {
             Ok(())
         });
 
-    Ok(Dictionary::from_iter([
+    let mut dict = Dictionary::from_iter([
         ("version", Object::from(env!("CARGO_PKG_VERSION"))),
         ("setup", Object::from(setup)),
         ("update_isk", Object::from(update_isk)),
@@ -348,7 +342,39 @@ fn jieba_rs() -> Result<Dictionary> {
         ("omap", Object::from(omap)),
         ("imap", Object::from(imap)),
         ("preview_nmap", Object::from(preview_nmap)),
-        ("preview_cancel", Object::from(preview_cancel)),
         ("default_keymaps", Object::from(default_keymaps)),
-    ]))
+    ]);
+
+    // One `jieba_preview_{motion}()` per previewable motion, plus the cancel.
+    //
+    // Exported as functions so a config can bind the preview directly instead of
+    // routing through a `<Plug>(Jieba_preview_*)` string rhs - which silently
+    // needs `noremap = false` to resolve, since a noremap mapping never expands
+    // a `<Plug>` in its rhs. The `<Plug>` maps still exist for configs that
+    // prefer them.
+    for (name, motion) in [
+        ("w", b"w".as_slice()),
+        ("W", b"W".as_slice()),
+        ("e", b"e".as_slice()),
+        ("E", b"E".as_slice()),
+        ("b", b"b".as_slice()),
+        ("B", b"B".as_slice()),
+        ("ge", b"ge".as_slice()),
+        ("gE", b"gE".as_slice()),
+    ] {
+        let s = Rc::clone(&state);
+        let f: Function<(), ()> = Function::from_fn(move |()| -> Result<()> {
+            guard("preview", || preview::show(&s, motion));
+            Ok(())
+        });
+        dict.insert(format!("jieba_preview_{name}"), Object::from(f));
+    }
+    let s = Rc::clone(&state);
+    let cancel: Function<(), ()> = Function::from_fn(move |()| -> Result<()> {
+        guard("preview_cancel", || preview::cancel(&s));
+        Ok(())
+    });
+    dict.insert("jieba_preview_cancel", Object::from(cancel));
+
+    Ok(dict)
 }

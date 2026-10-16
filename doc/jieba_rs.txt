@@ -155,7 +155,18 @@ Visual and Operator-pending mode only; text objects have no Normal-mode form.
 
 5.4 MOTION PREVIEW                                        *jieba_rs-preview*
 
-Highlight where the next few motions would land, before moving:
+Highlight where the next few motions would land, before moving. Each motion has
+a Lua function on the module - prefer these to the `<Plug>` maps below: >lua
+
+    local jieba = require("jieba_rs")
+    vim.keymap.set("n", "<Leader>cw", jieba.jieba_preview_w)
+    vim.keymap.set("n", "<Leader>cc", jieba.jieba_preview_cancel)
+<
+`jieba_preview_w()`, `jieba_preview_W()`, `jieba_preview_e()`,
+`jieba_preview_E()`, `jieba_preview_b()`, `jieba_preview_B()`,
+`jieba_preview_ge()`, `jieba_preview_gE()`, `jieba_preview_cancel()`.
+
+The equivalent `<Plug>` maps also exist:
 
   <Plug> map                        previews ~
   <Plug>(Jieba_preview_w)           |<Plug>(Jieba_w)|
@@ -164,18 +175,17 @@ Highlight where the next few motions would land, before moving:
   <Plug>(Jieba_preview_E)           |<Plug>(Jieba_E)|
   <Plug>(Jieba_preview_b)           |<Plug>(Jieba_b)|
   <Plug>(Jieba_preview_B)           |<Plug>(Jieba_B)|
-  <Plug>(Jieba_preview_ge)          |<Plug>(Jieba_ge)|
-  <Plug>(Jieba_preview_gE)          |<Plug>(Jieba_gE)|
+  <Plug>(Jieba_preview_ge)          |<Plug>(Jieba_preview_ge)|
+  <Plug>(Jieba_preview_gE)          |<Plug>(Jieba_preview_gE)|
   <Plug>(Jieba_preview_cancel)      clears the preview
 
->lua
-    vim.keymap.set("n", "<Leader>jw", "<Plug>(Jieba_preview_w)")
-    vim.keymap.set("n", "<Leader>jc", "<Plug>(Jieba_preview_cancel)")
-<
+A `<Plug>` in a mapping's rhs only resolves when that mapping is NOT |noremap|,
+which is why the Lua functions are the easier interface.
+
 The highlights use the `JiebaPreview` group, linked to |hl-IncSearch|, and are
-drawn with |extmarks|, so every position in the preview is marked. The number
-of steps is bounded by `preview_limits`. Text objects and the arrow keys cannot
-be previewed.
+drawn with |extmarks|, so every position in the preview is marked. The number of
+steps is bounded by `preview_limits`. Text objects and the arrow keys cannot be
+previewed.
 
 ==============================================================================
 6. COMMANDS                                             *jieba_rs-commands*
@@ -205,7 +215,8 @@ be previewed.
   setup(opts)                   see |jieba_rs.setup()|
   default_keymaps(buf)          install the default keymaps; `buf` 0 = global
   update_isk(isk)               re-read an 'iskeyword' value into the tokenizer
-  preview_cancel()              see |:JiebaPreviewCancel|
+  jieba_preview_{motion}()      see |jieba_rs-preview|
+  jieba_preview_cancel()        clear the preview highlights
 
 The raw model calls below take and return Vim-style positions (`lnum`/`col`
 1-based) and exist mainly for tests and benchmarks; the keymaps use them
