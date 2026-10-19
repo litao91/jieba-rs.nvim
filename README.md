@@ -56,8 +56,9 @@ From a shell:
 make install     # cargo build --release, then copy to lua/jieba_rs.so
 ```
 
-A running Neovim keeps the module it already `dlopen`'d, so **restart after
-building**.
+A running Neovim keeps the module it already `dlopen`'d, so **restart after a
+rebuild**. A *first* build needs no restart: `require("jieba_rs")` picks the new
+`.so` up as soon as the build lands.
 
 ## Configuration
 

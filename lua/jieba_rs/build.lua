@@ -60,9 +60,10 @@ end
 --- where make is unavailable (Windows).
 ---
 --- Cargo's own freshness check decides whether anything is rebuilt, so this is
---- cheap to call on every start and stays silent when nothing changed: the
---- "restart Neovim" notification only appears if the installed module actually
---- moved.
+--- cheap to call on every start and stays silent when nothing changed. A
+--- notification only appears when the installed module actually moved, and it says
+--- which way out applies: a process that already loaded the module has to restart,
+--- one that has not can require it straight away.
 ---
 --- Returns an already-started |vim.async.Task|; block on it with `:pwait()`.
 ---@return vim.async.Task
@@ -92,10 +93,18 @@ function M.build()
         vim.uv.fs_copyfile(built, installed)
       end
     end
-    if not had_lib then
-      notify "native module built; restart Neovim to load it"
-    elseif mtime(installed) ~= before then
-      notify "native module rebuilt; restart Neovim to load it"
+    if not had_lib or mtime(installed) ~= before then
+      local verb = had_lib and "rebuilt" or "built"
+      if package.loaded.jieba_rs then
+        -- This process already dlopen'd the previous module and keeps those pages
+        -- until it exits, so only a restart picks the new one up.
+        notify("native module " .. verb .. "; restart Neovim to load it")
+      else
+        -- Nothing is mapped yet, so the new module is reachable right away: this
+        -- plugin ships lua/jieba_rs/, which keeps the module name in vim.loader's
+        -- index of the directory, and the .so itself is stat'd on every lookup.
+        notify("native module " .. verb .. "; require('jieba_rs') loads it now")
+      end
     end
     return true
   end)
