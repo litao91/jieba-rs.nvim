@@ -56,8 +56,8 @@ local function notify(msg, level)
   end)
 end
 
---- Build with `make install`, falling back to a bare `cargo build` plus a copy
---- where make is unavailable (Windows).
+--- Build with `make install`, falling back to a bare `cargo build` plus an atomic
+--- install of the cdylib where make is unavailable (Windows).
 ---
 --- Cargo's own freshness check decides whether anything is rebuilt, so this is
 --- cheap to call on every start and stays silent when nothing changed. A
@@ -90,7 +90,19 @@ function M.build()
       -- mtime comparison below still means "cargo relinked".
       local built = built_path(root)
       if not (vim.uv.fs_stat(installed) and mtime(built) <= mtime(installed)) then
-        vim.uv.fs_copyfile(built, installed)
+        -- Install through a temp file and a rename, like `make install` does:
+        -- copying over the destination in place rewrites the pages of a .so this
+        -- Neovim may already have dlopen'd, while a rename swaps the directory
+        -- entry and leaves the running inode mapped until restart.
+        local tmp = installed .. ".tmp"
+        vim.uv.fs_copyfile(built, tmp)
+        -- A failed copy leaves no temp file behind, so the rename reports that too.
+        local ok, err = vim.uv.fs_rename(tmp, installed)
+        if not ok then
+          vim.uv.fs_unlink(tmp)
+          notify(("could not install %s: %s"):format(installed, tostring(err)), vim.log.levels.ERROR)
+          error("jieba_rs: install failed", 0)
+        end
       end
     end
     if not had_lib or mtime(installed) ~= before then
