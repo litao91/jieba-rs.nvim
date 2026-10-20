@@ -178,9 +178,9 @@ fn playback_core(p: &PendingOmap) {
     // linewise `d`; the events are suppressed to match what the builtin motions
     // do (a real `dw` does not fire InsertEnter/InsertLeave or ModeChanged).
     let _ = nvimrs::set_option_value("startofline", Object::from(true), 0, 0);
-    let _ = nvimrs::set_option_value(
+    let _ = nvimrs::set_option_string(
         "eventignore",
-        Object::from("InsertEnter,InsertLeave,ModeChanged"),
+        "InsertEnter,InsertLeave,ModeChanged",
         0,
         0,
     );
@@ -226,13 +226,9 @@ fn playback_core(p: &PendingOmap) {
         ));
     }
 
-    // Restore the options and the mark we borrowed.
-    let _ = nvimrs::set_option_value(
-        "eventignore",
-        Object::from(orig_eventignore),
-        0,
-        0,
-    );
+    // Restore the options and the mark we borrowed. `eventignore` is normally
+    // empty, which `Object::from` cannot represent - see `set_option_string`.
+    let _ = nvimrs::set_option_string("eventignore", &orig_eventignore, 0, 0);
     let _ = nvimrs::set_option_value(
         "startofline",
         Object::from(orig_startofline),

@@ -247,6 +247,9 @@ fn driver_args(
     // `mode` is reduced to its first character's code point because blockwise
     // visual is the raw byte \x16, which is not valid UTF-8 and would break
     // reading the dump back as text.
+    //
+    // `ei`/`sol` are the options the omap playback borrows and has to give back:
+    // vanilla vim never touches them, so any divergence is a leaked save/restore.
     let visual = "index(['v', 'V', \"\\<C-v>\"], mode(1)[0]) >= 0";
     let out = vim_single_quoted(&out.to_string_lossy());
     args.push(format!(
@@ -258,7 +261,9 @@ fn driver_args(
          'mode=' . char2nr(mode(1)[0]), \
          'reg=' . getreg('\"'), \
          'lb=' . string(getpos(\"'[\")[1:2]), \
-         'rb=' . string(getpos(\"']\")[1:2])\
+         'rb=' . string(getpos(\"']\")[1:2]), \
+         'ei=' . &eventignore, \
+         'sol=' . &startofline\
          ], {out})"
     ));
     args
@@ -325,7 +330,7 @@ fn run_case(case: &Case, setup_lua: Option<&str>, out: &Path) -> Option<Dump> {
 /// The fields compared for every case, plus `'[`/`']` where they are part of
 /// the contract.
 fn compare_fields(keys: &str) -> Vec<&'static str> {
-    let mut f = vec!["buf", "cur", "sel0", "sel1", "mode", "reg"];
+    let mut f = vec!["buf", "cur", "sel0", "sel1", "mode", "reg", "ei", "sol"];
     if compares_marks(keys) {
         f.push("lb");
         f.push("rb");

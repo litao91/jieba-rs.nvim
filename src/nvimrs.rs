@@ -79,7 +79,7 @@ use std::ffi::{CString, c_char, c_void};
 use std::ptr;
 
 use nvim_oxi::conversion::FromObject;
-use nvim_oxi::{Array, Dictionary, Object};
+use nvim_oxi::{Array, Dictionary, Object, StringBuilder};
 
 /// `LUA_INTERNAL_CALL` = `(1<<63) + 1` (defs.h: INTERNAL_CALL_MASK, VIML/LUA).
 const LUA_INTERNAL_CALL: u64 = (1u64 << 63) + 1;
@@ -614,6 +614,23 @@ pub fn set_option_value(name: &str, value: Object, buf: i32, win: i32) -> bool {
     };
     drop(ret);
     !err.is_err()
+}
+
+/// `set_option_value` for a **string** option. Use this instead of building the
+/// `Object` with `Object::from`, which is broken for the empty string.
+///
+/// oxi 0.6 allocates the terminator through `StringBuilder::with_capacity`, but
+/// `push_bytes` returns early on an empty slice and `finish` only writes the
+/// terminator on its null-pointer path, so `Object::from("")` hands nvim a
+/// one-byte buffer that was malloc'd and never initialised. nvim reads option
+/// strings as C strings, so it parses heap garbage and rejects the write -
+/// silently, because every caller discards the returned bool. `StringBuilder::new`
+/// leaves the pointer null and therefore takes the terminating path, for empty
+/// and non-empty values alike.
+pub fn set_option_string(name: &str, value: &str, buf: i32, win: i32) -> bool {
+    let mut sb = StringBuilder::new();
+    sb.push_bytes(value.as_bytes());
+    set_option_value(name, Object::from(sb.finish()), buf, win)
 }
 
 /// Native `nvim_get_vvar` (v: scope, e.g. count/operator/register).
