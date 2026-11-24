@@ -139,7 +139,7 @@ pub fn show(state: &SharedState, motion: &[u8]) {
             .end_row(lnum.saturating_sub(1))
             .end_col(start + width)
             .build();
-        let _ = buf.set_extmark(ns, lnum.saturating_sub(1), start, &opts);
+        let _ = nvimrs::set_extmark(buf.handle(), ns, lnum.saturating_sub(1), start, &opts);
     }
 }
 

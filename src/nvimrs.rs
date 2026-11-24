@@ -78,6 +78,7 @@
 use std::ffi::{CString, c_char, c_void};
 use std::ptr;
 
+use nvim_oxi::api::opts::SetExtmarkOpts;
 use nvim_oxi::conversion::FromObject;
 use nvim_oxi::{Array, Dictionary, Object, StringBuilder};
 
@@ -424,6 +425,56 @@ unsafe extern "C" {
         err: *mut CError,
     ) -> Object;
     fn nvim_command(cmd: CStr, err: *mut CError);
+    // 0.13 sig: (buf, ns_id, line, col, Dict(set_extmark)* opts, err) -> Integer.
+    // oxi 0.6's SetExtmarkOpts is smaller than 0.13's keyset (which grew trailing
+    // `_conceal_continuation` / `_subpriority`); see `set_extmark` below.
+    fn nvim_buf_set_extmark(
+        buf: i32,
+        ns_id: i64,
+        line: i64,
+        col: i64,
+        opts: *const SetExtmarkOpts,
+        err: *mut CError,
+    ) -> i64;
+}
+
+/// `nvim_buf_set_extmark` with nvim-oxi's `SetExtmarkOpts` zero-padded to nvim
+/// 0.13's larger `Dict(set_extmark)`.
+///
+/// 0.13 grew two trailing fields nvim-oxi 0.6 does not know about
+/// (`_conceal_continuation`, `_subpriority`). nvim reads them past the end of
+/// oxi's smaller struct; left as stack garbage they trip the
+/// "_conceal_continuation requires conceal" validation whenever marks overlap.
+/// Embedding oxi's opts in a zeroed buffer makes those trailing fields read 0.
+/// The leading fields callers set keep oxi's layout and mask bits, which match
+/// 0.13 for them (they hash ahead of the two new fields). Returns the extmark id,
+/// or `None` on error.
+pub fn set_extmark(buf: i32, ns: u32, line: usize, col: usize, opts: &SetExtmarkOpts) -> Option<i64> {
+    #[repr(C)]
+    struct Padded {
+        opts: SetExtmarkOpts,
+        // Covers 0.13's trailing `_conceal_continuation` (Boolean) +
+        // `_subpriority` (Integer) with room to spare; stays zero.
+        _tail: [u8; 128],
+    }
+    // SAFETY: an all-zero `SetExtmarkOpts` is a valid bit pattern (mask 0, every
+    // Object/Array/String nil, integers 0, bools false); the tail is zero so nvim
+    // reads 0 for the fields oxi lacks. `padded.opts` is then overwritten with a
+    // clone of the caller's opts before the call.
+    let mut padded: Padded = unsafe { std::mem::zeroed() };
+    padded.opts = opts.clone();
+    let mut err = CError::new();
+    // SAFETY: module contract. `padded` outlives the call and is large enough for
+    // 0.13's keyset; `err` is a valid `&mut CError`; main thread only. nvim adopts
+    // no caller string (hl_group is parsed/copied), so the clone's allocations
+    // dropping at function end is fine.
+    let id = unsafe {
+        nvim_buf_set_extmark(buf, ns as i64, line as i64, col as i64, &padded.opts, &mut err)
+    };
+    if err.is_err() {
+        return None;
+    }
+    Some(id)
 }
 
 // --- safe wrappers ---------------------------------------------------------
